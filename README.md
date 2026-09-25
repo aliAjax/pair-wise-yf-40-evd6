@@ -26,6 +26,17 @@ python3 app.py --db ./data.db --port 8306
 
 - `consignment`：检疫批次；`facility`：温室、苗圃或下游种植点。
 
+## 业务规则
+
+- **批次来源**：创建批次时可带`parent_id`指向上游批次。来源必须是已登记的批次，沿来源链向上不允许成环（含自环），否则创建被拒绝。
+- **复检解除隔离**：隔离中的批次必须执行`recheck`并提交`recheck_result`（`passed`/`failed`）；只有`passed`才会回到`inspected`状态，复检结论随批次档案永久保存，`failed`仍留在隔离中。
+- **放行联动**：`release`时会沿`parent_id`逐级检查上游，任一上游批次仍处于`quarantined`状态时，下游批次不能放行。
+- **传播追溯**：温室/种植点执行`trace`并提交起点批次`consignment_ids`后，档案中的`trace_report`包含：
+  - `paths`：从每个起点到末端批次的完整传播路径（含分叉）；
+  - `batches`：路径上每批的风险状态（`isolated`隔离中、`eliminated`已销毁、`cleared`已放行、`infected`检出有害生物、`observing`观察中、`pending`待检）；
+  - `facilities`：按批次`destination`匹配到的受影响种植点。
+  追溯可重复提交；同一批次再次上报时沿用首次追溯时记录的结果，不会因后续状态变化而改写。
+
 ## 主要接口
 
 - `GET /health`：健康检查。
