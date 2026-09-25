@@ -12,7 +12,10 @@ class DomainService:
         self.audit = AuditTrail(repository)
 
     def _lookup(self, kind, field, value):
-        return self.repository.find_entities(self.rules.normalize_kind(kind), field, value)
+        kind = self.rules.normalize_kind(kind)
+        if field is None:
+            return self.repository.list_entities(kind=kind)
+        return self.repository.find_entities(kind, field, value)
 
     def health(self):
         return {"status": "ok" if self.repository.ping() else "error"}
@@ -26,8 +29,18 @@ class DomainService:
                 entity = self.repository.get_entity(existing)
                 if entity:
                     return entity
-        self.rules.validate_create(actor, kind, payload, self._lookup)
         entity_id = str(payload.pop("id", "") or uuid4())
+        if kind == "consignment":
+            code = payload.get("code")
+            if code:
+                reported = self._lookup(kind, "code", code)
+                if reported:
+                    if idempotency_key:
+                        self.repository.save_idempotency(
+                            actor.user_id, idempotency_key, reported[0]["id"]
+                        )
+                    return reported[0]
+        self.rules.validate_create(actor, kind, payload, self._lookup, entity_id=entity_id)
         if self.repository.get_entity(entity_id):
             raise ConflictError("entity already exists: " + entity_id)
         status = self.rules.initial_status(kind)
